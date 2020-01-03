@@ -22,17 +22,19 @@ Inductive Tree : Type :=
   | null : Tree
   | node : K->V->Tree->Tree->Tree. 
 
-Fixpoint tree_all_keys (t: Tree) (p: K->Prop) : Prop := 
+(* general predicate *) 
+Fixpoint tree_all_keys (t: Tree) (p: K->V->Prop) : Prop := 
   match t with 
   | null => True 
-  | node k v lt rt  => p k /\ (tree_all_keys lt p) /\ (tree_all_keys rt p)
+  | node k v lt rt  => p k v /\ (tree_all_keys lt p) /\ (tree_all_keys rt p)
   end. 
 
+
 Definition tree_min (t: Tree) (k: K): Prop :=
-  tree_all_keys t (fun k' => k' > k).
+  tree_all_keys t (fun k' _  => k' > k).
 
 Definition tree_max (t: Tree) (k: K): Prop :=
-  tree_all_keys t (fun k' => k' < k).
+  tree_all_keys t (fun k' _ => k' < k).
 
 Fixpoint is_bst (t: Tree) : Prop := 
   match t with 
@@ -61,10 +63,11 @@ Fixpoint tree_insert (tr: Tree) (a: K) (v: V) : Tree :=
                                  else node key val ltr (tree_insert rtr a v))
   end.
 
-Lemma all_after_insert: forall t a v p, tree_all_keys t p -> p a -> tree_all_keys (tree_insert t a v) p.
+Lemma all_after_insert: forall t a v p, tree_all_keys t p -> p a v -> tree_all_keys (tree_insert t a v) p.
 Proof.
 induction t; simpl; intros. 
-auto. remember (a =? k) as c. destruct c. constructor. apply H. apply H. 
+auto. remember (a =? k) as c. destruct c. constructor. symmetry in Heqc. apply Nat.eqb_eq in Heqc.
+rewrite <- Heqc. apply H0. apply H. 
 remember (a <? k) as d. destruct d; simpl. split; try (apply H). split. 
 apply IHt1. apply H. apply H0. apply H. 
 split; try (apply H). split. apply H. apply IHt2. apply H. apply H0.
@@ -162,31 +165,157 @@ induction tr; simpl.
   rewrite IHtr1. reflexivity. rewrite IHtr2. reflexivity.
 Qed.
 
+(* get all elements in the tree, in order *) 
+Fixpoint tree_elements (tr: Tree) : list (K * V) := 
+  match tr with 
+  | null            => nil
+  | node k v lt rt  => (tree_elements lt) ++ (cons (k, v) (tree_elements rt))
+  end.
 
+Definition bst_elements (tr: BST) : list (K * V) :=
+  match tr with 
+  | tree t proof_t  => tree_elements t
+  end. 
 
-Theorem element_found: forall tr k v,
-  tree_search tr k = Some v -> In (k, v) (elements tr).
+Definition sorted_helper (a: K*V) (ls: list (K*V)) : Prop := 
+  match ls with 
+  | nil             => True 
+  | cons a' ls'     => if (fst a <? fst a') then True else False
+  end. 
+
+Fixpoint list_sorted (ls: list (K*V)) : Prop := 
+  match ls with 
+  | nil           => True 
+  | cons a ls'    => (sorted_helper a ls') /\ list_sorted ls'
+  end. 
+
+Lemma tree_all_keys_elements: forall t k v p,
+  In (k, v) (tree_elements t) -> tree_all_keys t p -> p k v.
 Proof.
-induction tr; simpl; intros.
-discriminate.
-destruct (Nat.eq_dec k0 k).
-- (* found at root *)
-subst.
-rewrite <- beq_nat_refl in H.
-injection H; intros; subst.
-apply in_the_middle.
-- (* found in subtree *)
-apply nat_not_equal in n.
-rewrite n in H.
-apply in_app_iff.
-destruct (k0 <? k).
-+ (* left subtree *)
-apply IHtr1 in H.
-left. assumption.
-+ (* right subtree *)
-apply IHtr2 in H.
-right. apply in_cons. assumption.
+induction t; simpl; intros. inversion H.
+apply in_app_iff in H. destruct H.
+apply IHt1. apply H. apply H0.
+simpl in H. destruct H. injection H; intros; subst. apply H0.
+apply IHt2. apply H. apply H0.
 Qed.
+
+
+Lemma cons_sorted : forall rt p v, 
+  list_sorted (tree_elements rt)
+  -> tree_min rt p -> list_sorted ((p, v) :: (tree_elements rt)).
+Proof. 
+induction rt; simpl; try auto; intros. 
+split. 
+- inversion H0. remember (tree_elements rt1 ++ (k, v) :: tree_elements rt2) as ls. 
+  destruct ls. simpl. auto. simpl.
+  replace (p <? fst p0) with true. constructor. symmetry. apply Nat.ltb_lt. destruct p0. simpl.
+  remember (tree_elements rt1) as rt_elts. destruct rt_elts; simpl in Heqls; injection Heqls; intros; subst.
++ omega.
++ destruct H2.
+assert (In (k0, v1) (tree_elements rt1)). { rewrite <- Heqrt_elts. simpl. left. reflexivity. }
+eapply tree_all_keys_elements in H4; try eauto. simpl in H4. omega.
+- apply H. 
+Qed. 
+
+Lemma cons_ls_sorted : forall a l, 
+  list_sorted (a :: l) -> list_sorted l. 
+Proof. 
+intros. simpl in H. destruct H. apply H0. Qed. 
+
+Lemma app_sorted: forall l rt p v,
+  list_sorted l -> list_sorted (tree_elements rt) ->
+  tree_min rt p -> Forall (fun e => fst e < p) l ->
+  list_sorted (l ++ (p, v) :: (tree_elements rt)).
+Proof.
+Opaque list_sorted.
+induction l; simpl; intros.
+- apply cons_sorted. assumption. assumption.
+- Transparent list_sorted. simpl.
+split.
++ simpl in H.
+destruct l. simpl. replace (fst a <? p) with true. easy. inversion H2; subst.
+symmetry. apply Nat.ltb_lt. assumption.
+simpl. destruct p0. destruct a. simpl.
+simpl in H. apply H.
++ apply IHl. eapply cons_ls_sorted; eauto. assumption. assumption. inversion H2; subst. assumption.
+Qed.
+
+Lemma max_lt_list : forall t p x, 
+  tree_max t p -> In x (tree_elements t) -> fst x < p. 
+Proof.
+intros. 
+destruct x. simpl. eapply tree_all_keys_elements in H. eauto . eauto.
+Qed. 
+
+Lemma concat_sorted : forall lt rt p v, 
+  list_sorted (tree_elements lt) -> list_sorted (tree_elements rt)
+  -> tree_max lt p -> tree_min rt p -> list_sorted ((tree_elements lt) ++ (p, v) :: (tree_elements rt)).
+Proof. 
+intros. 
+apply app_sorted.
+apply H.  apply H0. apply H2. 
+apply Forall_forall. 
+intros. eapply max_lt_list. eapply H1. apply H3.
+Qed. 
+
+
+(** monotonicity of the elements *) 
+Lemma elements_tree_monotone : forall tr, 
+  is_bst tr -> list_sorted (tree_elements tr). 
+Proof. 
+intros tr. induction tr; simpl. auto. 
+intros. apply concat_sorted. apply IHtr1. apply H.
+apply IHtr2. apply H. apply H.  apply H. 
+Qed. 
+
+Theorem elements_monotone : forall (tr: BST), 
+  list_sorted (bst_elements tr). 
+Proof. 
+intros. destruct tr. simpl. apply elements_tree_monotone. apply i.
+Qed.
+
+(** all elements will be found by tree search, vice versa *)  
+
+(* lemma for tree *) 
+Lemma tree_found : forall tr k v, 
+  tree_search tr k = Some v -> In (k, v) (tree_elements tr). 
+Proof.
+intros tr k v. 
+induction tr; simpl. 
+intro H. inversion H. 
+remember (k =? k0) as a eqn:Heq. destruct a. 
+- intro. symmetry in Heq. apply Nat.eqb_eq in Heq; subst. inversion H.
+  rewrite <- H1. simpl. apply in_app_iff. right. simpl. left. reflexivity.
+- remember (k <? k0) as a eqn:Hle. destruct a. 
+  + intro. apply IHtr1 in H. eapply in_app_iff. left. apply H. 
+  + intro. apply IHtr2 in H. eapply in_app_iff. right. apply in_cons. apply H.
+Qed. 
+
+(** theorem bi-directional for tree and BST *) 
+Theorem tree_equiv : forall tr k v, 
+  is_bst tr -> (In (k, v) (tree_elements tr) <-> tree_search tr k = Some v).
+Proof. 
+intros tr k v.
+induction tr; simpl.
+- (* null tree *) 
+intros. inversion H. split; try (intros H1; inversion H1).
+- (* real stuff!! *) 
+intros. split. 
+  + intros. remember (k =? k0) as a. destruct a. 
+    symmetry in Heqa. apply Nat.eqb_eq in Heqa. rewrite Heqa in H0.
+    apply in_app_or in H0. inversion H0.
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 Fixpoint elements (tr: BST) : list (K * V) :=
