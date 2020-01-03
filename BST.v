@@ -1,3 +1,13 @@
+(******************************************************************
+  Definitions of general tree and BST, where BST is constructed as 
+  a tree with the proof that it's BST. 
+  Functions such as insert, search, and equivalences between tree
+  and list of elements from in-order tree traversal. 
+  Various lemmas, theorems that prove properties of the functions. 
+  
+  Author: :p 
+  *****************************************************************) 
+
 Require Import EqNat.
 Require Import PeanoNat.
 Require Import String.
@@ -10,10 +20,8 @@ Set Implicit Arguments.
 
 Section TREE.
 
-(*
-Type for the keys of the tree.
-Could potentially be polymorphic, with requirements of decidable equality and total ordering.
-*)
+(** Type for the keys of the tree.
+  Could potentially be polymorphic, with requirements of decidable equality and total ordering. *)
 Definition K: Type := nat.
 
 Variable V: Type.
@@ -81,7 +89,9 @@ apply Nat.ltb_lt in H1. rewrite H1 in H0. discriminate.
 auto.
 Qed.
 
-Lemma insert_proof : forall (tr: Tree) (a: K) (v: V), is_bst tr -> is_bst (tree_insert tr a v).
+(** Theorem: tree_insert works, invariance. 
+    Crucial for the self-verifying definition of BST_insert *)
+Theorem insert_proof : forall (tr: Tree) (a: K) (v: V), is_bst tr -> is_bst (tree_insert tr a v).
 Proof.
 intros tr a v. induction tr; simpl. easy. 
 intros. remember (a =? k) as d. destruct d; simpl. 
@@ -108,11 +118,12 @@ Fixpoint tree_search (tr: Tree) (k: K) : option V :=
                                   else tree_search rtr k)
   end.
 
-Definition BST_search (tr: BST) (k: K) : option V :=
+Definition bst_search (tr: BST) (k: K) : option V :=
   match tr with 
   | tree t proof_t       => tree_search t k
   end.
 
+(** Theorems for tree and BST: what is inserted is seachable. *) 
 Theorem insert_retrieve: forall tr k v, tree_search (tree_insert tr k v) k = Some v.
 Proof.
 induction tr; simpl; intros.
@@ -128,9 +139,9 @@ destruct lt_root; simpl; rewrite <- Heqmatch_root; rewrite <- Heqlt_root.
 apply IHtr1. apply IHtr2.
 Qed.
 
-Theorem BST_insert_retrieve : forall tr k v, BST_search (BST_insert tr k v) k = Some v. 
+Theorem BST_insert_retrieve : forall tr k v, bst_search (BST_insert tr k v) k = Some v. 
 Proof. 
-unfold BST_search, BST_insert. induction tr; simpl; intros. apply insert_retrieve. 
+unfold bst_search, BST_insert. induction tr; simpl; intros. apply insert_retrieve. 
 Qed.
 
 
@@ -146,7 +157,9 @@ remember (n =? m) as same. symmetry in Heqsame. destruct same; try easy.
 apply Nat.eqb_eq in Heqsame. contradiction.
 Qed.
 
-Theorem insert_other_skip: forall tr k1 v k2,
+(** Theorems for tree and BST: search for a key after insersion for a different key 
+    is unaffected by the insersion. *) 
+Theorem tree_insert_skip: forall tr k1 v k2,
   k2 <> k1 -> tree_search (tree_insert tr k1 v) k2 = tree_search tr k2.
 Proof.
 intros. apply nat_not_equal in H. 
@@ -164,6 +177,12 @@ induction tr; simpl.
   + remember (k1 <? k) as d. destruct d; simpl. 
   rewrite IHtr1. reflexivity. rewrite IHtr2. reflexivity.
 Qed.
+
+Theorem bst_insert_skip : forall (tr:BST) k1 v k2,
+  k2 <> k1 -> bst_search (BST_insert tr k1 v) k2 = bst_search tr k2.
+Proof.
+intros. destruct tr. eapply tree_insert_skip in H.
+simpl. apply H. Qed.
 
 (* get all elements in the tree, in order *) 
 Fixpoint tree_elements (tr: Tree) : list (K * V) := 
@@ -189,6 +208,7 @@ Fixpoint list_sorted (ls: list (K*V)) : Prop :=
   | cons a ls'    => (sorted_helper a ls') /\ list_sorted ls'
   end. 
 
+(* a bunch of useful lemmas for proving the monotonicity *) 
 Lemma tree_all_keys_elements: forall t k v p,
   In (k, v) (tree_elements t) -> tree_all_keys t p -> p k v.
 Proof.
@@ -259,7 +279,7 @@ intros. eapply max_lt_list. eapply H1. apply H3.
 Qed. 
 
 
-(** monotonicity of the elements *) 
+(** Theorems for tree and BST: monotonicity of the elements. *) 
 Lemma elements_tree_monotone : forall tr, 
   is_bst tr -> list_sorted (tree_elements tr). 
 Proof. 
@@ -268,15 +288,14 @@ intros. apply concat_sorted. apply IHtr1. apply H.
 apply IHtr2. apply H. apply H.  apply H. 
 Qed. 
 
+
 Theorem elements_monotone : forall (tr: BST), 
   list_sorted (bst_elements tr). 
 Proof. 
 intros. destruct tr. simpl. apply elements_tree_monotone. apply i.
 Qed.
 
-(** all elements will be found by tree search, vice versa *)  
-
-(* lemma for tree *) 
+(* useful lemmas for proving the main theorems below *) 
 Lemma tree_found : forall tr k v, 
   tree_search tr k = Some v -> In (k, v) (tree_elements tr). 
 Proof.
@@ -291,59 +310,91 @@ remember (k =? k0) as a eqn:Heq. destruct a.
   + intro. apply IHtr2 in H. eapply in_app_iff. right. apply in_cons. apply H.
 Qed. 
 
-(** theorem bi-directional for tree and BST *) 
+Lemma tree_equiv_helper : forall k v k0 v0 tr1 tr2,
+  In (k, v) (tree_elements (node k0 v0 tr1 tr2)) <-> 
+  (k, v) = (k0, v0) \/ In (k, v) (tree_elements tr1) \/ In (k, v) (tree_elements tr2).
+Proof. 
+intros k v k0 v0 tr1 tr2. simpl. split. 
+- intros. apply in_app_iff in H. inversion H. 
+  right. left.  apply H0.
+  simpl in H0. inversion H0. rewrite H1. auto. right. right. apply H1. 
+- intros. apply in_app_iff. inversion H. simpl. rewrite H0. auto. 
+  inversion H0. left. apply H1. simpl. right. right. apply H1. 
+Qed.
+
+
+Lemma tree_equiv_helper' : forall k v k0 v0 tr1 tr2, 
+  tree_search (node k0 v0 tr1 tr2) k = Some v -> 
+  (k0, v0) = (k, v) \/ tree_search tr1 k = Some v \/ tree_search tr2 k = Some v. 
+Proof. 
+simpl.
+intros. 
+remember (k =? k0) as a; destruct a. left. symmetry in Heqa.
+apply Nat.eqb_eq in Heqa. subst. 
+inversion H. auto. symmetry in Heqa.
+remember (k <? k0) as b. destruct b. 
+right. left. assumption. 
+right. right. assumption.
+Qed. 
+
+(** Theorems for BST: the list of elements is equivalent to the tree nodes searchable  
+  aka. all elements got by tree traversal can be found by tree search, vice versa *)  
 Theorem tree_equiv : forall tr k v, 
   is_bst tr -> (In (k, v) (tree_elements tr) <-> tree_search tr k = Some v).
 Proof. 
 intros tr k v.
-induction tr; simpl.
+induction tr.
 - (* null tree *) 
-intros. inversion H. split; try (intros H1; inversion H1).
+intros. split; intros; inversion H0.
 - (* real stuff!! *) 
-intros. split. 
-  + intros. remember (k =? k0) as a. destruct a. 
-    symmetry in Heqa. apply Nat.eqb_eq in Heqa. rewrite Heqa in H0.
-    apply in_app_or in H0. inversion H0.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Fixpoint elements (tr: BST) : list (K * V) :=
-  match tr with
-  | null => nil
-  | node k v ltr rtr => (elements ltr) ++ ((k, v) :: elements rtr)
-  end.
-
-Lemma in_the_middle: forall T (v: T) l1 l2, 
- v (l1 ++ v :: l2).
-Proof.
-intros.
-apply in_app_iff. right. apply in_eq.
+intros. split; try (apply tree_found). 
+intros. simpl in H. 
+apply tree_equiv_helper in H0.
+destruct H. destruct H1. destruct H2. assert (H2' := H2). assert (H3' := H3).
+apply IHtr1 in H2. apply IHtr2 in H3.
+destruct H0. simpl. injection H0; intros; subst. replace (k0 =? k0) with true.
+reflexivity. symmetry. apply Nat.eqb_eq. reflexivity. 
+destruct H0. assert (H0' := H0). simpl.  eapply tree_all_keys_elements in H0; try eauto.
+simpl in H0. 
+replace (k =? k0) with false. apply Nat.ltb_lt in H0. rewrite H0. 
+apply H2. apply H0'. symmetry. apply nat_not_equal. intro. omega. 
+assert (H0' := H0). simpl. eapply tree_all_keys_elements in H0; try eauto. 
+simpl in H0.
+replace (k =? k0) with false. replace (k <? k0) with false. apply H3. apply H0'.
+symmetry. remember (k <? k0) as Hfal. destruct Hfal. symmetry in HeqHfal. apply Nat.ltb_lt in HeqHfal.
+omega. reflexivity. symmetry. apply nat_not_equal. omega. 
 Qed.
 
-
-Theorem element_not_found: forall tr k,
-  tree_search tr k = None -> ~ In k (map fst (elements tr)).
+Theorem bst_equiv : forall (tr:BST) k v,
+  In (k, v) (bst_elements tr) <-> bst_search tr k = Some v. 
 Proof.
-induction tr; simpl; intros.
-easy.
+intros. destruct tr. apply tree_equiv. apply i. Qed. 
 
-Abort.
+
+(** Theorems for BST: if we can't find in search, we can't find in list, vice versa *) 
+Theorem element_not_found: forall (tr:BST) k,
+  bst_search tr k = None <-> ~ In k (map fst (bst_elements tr)).
+Proof.
+intros. split. 
+- (* -> *) 
+intros. intro. apply in_map_iff in H0. destruct H0. destruct H0. 
+destruct x . apply bst_equiv in H1. simpl in H0. subst. 
+rewrite H1 in H. discriminate. 
+- (* <- *) 
+intro. unfold not in H. 
+assert (forall o, (forall v:V, ~ o = Some v) -> o = None). 
+{ intros Hv. destruct Hv. intros. assert (Some v <> Some v).
+apply H0. assert (Some v = Some v). reflexivity. contradiction. 
+intros. reflexivity. }
+apply H0 with (o:=bst_search tr k). intros. intro. 
+apply bst_equiv in H1. apply H. apply in_map_iff. exists (k, v).
+simpl. split; try auto.
+Qed. 
 
 End TREE.
 
 
-
+(** Some silly examples :p nothing super fancy here *) 
 Section examples.
 
 Definition null_nat := null nat.
@@ -365,15 +416,15 @@ reflexivity. Qed.
 
 Local Open Scope string_scope.
 Variable base_tree: BST string.
-Definition big_tree := tree_insert (tree_insert (tree_insert (tree_insert base_tree 5 "totonut") 3 "mahalo") 6 "aloha") 4 "hello".
+Definition big_tree := BST_insert (BST_insert (BST_insert (BST_insert (null_BST string) 5 "totonut") 3 "mahalo") 6 "aloha") 4 "hello".
 
-Example big_tree_search_5: tree_search big_tree 5 = Some "totonut".
+Example big_tree_search_5: bst_search big_tree 5 = Some "totonut".
 Proof.
 unfold big_tree.
-rewrite insert_other_skip.
-rewrite insert_other_skip.
-rewrite insert_other_skip.
-rewrite insert_retrieve.
+rewrite bst_insert_skip.
+rewrite bst_insert_skip.
+rewrite bst_insert_skip.
+simpl.
 easy. easy. easy. easy.
 Qed.
 
