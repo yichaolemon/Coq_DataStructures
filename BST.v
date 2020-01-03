@@ -391,6 +391,130 @@ apply bst_equiv in H1. apply H. apply in_map_iff. exists (k, v).
 simpl. split; try auto.
 Qed. 
 
+Section REMOVE.
+
+Fixpoint tree_find_remove_max (t: Tree) : (Tree * option (K * V)) :=
+  match t with
+  | null => (null, None)
+  | node k v ltr null => (ltr, Some (k, v))
+  | node k v ltr rtr => let (rtr_removed, max) := tree_find_remove_max rtr in
+      (node k v ltr rtr_removed, max)
+  end.
+
+Definition tree_remove_root (t: Tree) : Tree :=
+  match t with
+  | null => null
+  | node k v null rtr => rtr
+  | node k v ltr null => ltr
+  | node k v ltr rtr => let (ltr_removed, new_root) := tree_find_remove_max t in
+    match new_root with None => t (* impossible *)
+    | Some (k', v') => node k' v' ltr_removed rtr
+    end
+  end.
+
+Fixpoint tree_remove (t: Tree) (k: K) : Tree :=
+  match t with
+  | null => null
+  | node k' v ltr rtr => if k =? k' then tree_remove_root t
+                         else if k <? k' then tree_remove ltr k else tree_remove rtr k
+  end.
+
+(** Theorems and lemmas which include remove *) 
+Lemma remove_max_satisfies_all: forall t rm_t max p
+  (REM: (rm_t, max) = tree_find_remove_max t)
+  (SAT: tree_all_keys t p),
+  tree_all_keys rm_t p.
+Proof.
+induction t; simpl; intros.
+injection REM; intros; subst.
+simpl. constructor.
+destruct t2.
+injection REM; intros; subst. apply SAT.
+remember (tree_find_remove_max (node k0 v0 t2_1 t2_2)) as rm_max. destruct rm_max.
+injection REM; intros; subst.
+simpl.
+split. apply SAT.
+split. apply SAT.
+apply IHt2 with o. auto. apply SAT.
+Qed.
+
+Lemma tree_find_remove_max_bst : forall t rm_t max
+  (ISBST: is_bst t) (REMOVE: tree_find_remove_max t = (rm_t, max)), is_bst rm_t.
+Proof.
+induction t; simpl; intros.
++
+injection REMOVE; intros; subst. simpl. constructor.
++ (* only induct down the right *) clear IHt1.
+destruct ISBST as (MAX & MIN & LEFTBST & RIGHTBST).
+destruct t2.
+- (* rtr is null *)
+injection REMOVE; intros; subst. assumption.
+- (* rtr is not null *)
+remember (tree_find_remove_max (node k0 v0 t2_1 t2_2)) as removed.
+destruct removed.
+injection REMOVE; intros; subst.
+simpl.
+split. assumption.
+split. eapply remove_max_satisfies_all; eauto.
+split. assumption.
+eapply IHt2; eauto.
+Qed.
+
+Lemma tree_all_keys_trans: forall t (p q: K->V->Prop),
+  (forall k v, p k v -> q k v) ->
+  tree_all_keys t p ->
+  tree_all_keys t q.
+Proof.
+induction t; simpl; intros.
+constructor.
+split. apply H. apply H0.
+split. eapply IHt1; eauto. apply H0. eapply IHt2; eauto. apply H0.
+Qed.
+
+Lemma tree_max_in: forall t rm_t k v
+  (REMOVE: tree_find_remove_max t = (rm_t, Some (k, v))), In (k, v) (tree_elements t).
+Proof.
+induction t; simpl; intros.
+discriminate.
+destruct t2.
+injection REMOVE; intros; subst.
+apply in_app_iff. right. simpl. auto.
+remember (tree_find_remove_max (node k1 v1 t2_1 t2_2)) as removed. destruct removed.
+injection REMOVE; intros; subst.
+apply in_app_iff. right. apply in_cons. eapply IHt2; eauto.
+Qed.
+
+Lemma tree_find_remove_max_max: forall t rm_t k v
+  (ISBST: is_bst t) (REMOVE: tree_find_remove_max t = (rm_t, Some (k, v))), tree_max rm_t k.
+Proof.
+induction t; simpl; intros.
+injection REMOVE; intros; subst. unfold tree_max. simpl. constructor.
+destruct t2.
+- (* rtr is null *)
+injection REMOVE; intros; subst.
+apply ISBST.
+- (* rtr is not null *)
+remember (tree_find_remove_max (node k1 v1 t2_1 t2_2)) as removed.
+destruct removed.
+destruct ISBST as (MAX & MIN & LEFTBST & RIGHTBST).
+injection REMOVE; intros; subst.
+assert (tree_max t k0) as MAXRM. { eapply IHt2; eauto. }
+assert (k < k0) as ROOTMAX. {
+symmetry in Heqremoved. apply tree_max_in in Heqremoved.
+eapply tree_all_keys_elements in Heqremoved; try eapply MIN.
+simpl in Heqremoved. omega.
+}
+split.
+apply ROOTMAX.
+split; try apply MAXRM.
+apply tree_all_keys_trans with (p := fun (k': K) (_: V) => k' < k).
+intros. omega.
+apply MAX.
+Qed.
+
+
+End REMOVE.
+
 End TREE.
 
 
