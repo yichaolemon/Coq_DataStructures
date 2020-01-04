@@ -406,7 +406,7 @@ Definition tree_remove_root (t: Tree) : Tree :=
   | null => null
   | node k v null rtr => rtr
   | node k v ltr null => ltr
-  | node k v ltr rtr => let (ltr_removed, new_root) := tree_find_remove_max t in
+  | node k v ltr rtr => let (ltr_removed, new_root) := tree_find_remove_max ltr in
     match new_root with None => t (* impossible *)
     | Some (k', v') => node k' v' ltr_removed rtr
     end
@@ -511,6 +511,50 @@ apply tree_all_keys_trans with (p := fun (k': K) (_: V) => k' < k).
 intros. omega.
 apply MAX.
 Qed.
+
+Lemma tree_find_remove_max_nonempty :
+  forall t, t <> null -> exists m rm_t, tree_find_remove_max t = (rm_t, Some m).
+Proof.
+induction t; intros. 
+- simpl. contradiction. 
+- remember t2 as t2'.
+  destruct t2'.
+  + simpl. eauto. 
+  + rewrite  Heqt2' in *. 
+    assert (t2 <> null). { subst t2. intro. discriminate. } 
+    apply IHt2 in H0. destruct H0. destruct H0. exists x. 
+    simpl. destruct t2; try discriminate. rewrite H0. exists (node k v t1 x0). reflexivity.  
+Qed.
+
+Lemma tree_remove_root_bst: forall t rm_t (ISBST: is_bst t) (REMOVE: tree_remove_root t = rm_t),
+  is_bst rm_t.
+Proof.
+Opaque tree_find_remove_max.
+destruct t; simpl; intros.
+subst. apply null_bst_proof.
+destruct t1. subst. apply ISBST. 
+destruct t2. subst. apply ISBST. 
+remember (tree_find_remove_max (node k0 v0 t1_1 t1_2)) as tree_removed. 
+destruct tree_removed.
+ (* destructing on the tree_find_remove_max cases *) 
+destruct o; simpl. 
+- (* when o is some p *) 
+destruct p. subst. simpl. symmetry in Heqtree_removed.
+split.  eapply tree_find_remove_max_max; try (eapply Heqtree_removed). apply ISBST. 
+split. assert (In (k2, v2) (tree_elements (node k0 v0 t1_1 t1_2))).
+{ eapply tree_max_in; try (eapply Heqtree_removed). } 
+apply tree_all_keys_trans with (p := fun (k': K) (_: V) => k' > k). 
+intros. assert (k > k2). { eapply tree_all_keys_elements in H; try (eapply ISBST).
+simpl in H. omega. } omega.
+simpl. split; try (apply ISBST). 
+split. eapply tree_find_remove_max_bst; try (eapply Heqtree_removed). apply ISBST. 
+apply ISBST. 
+- (* when o is None *) 
+Transparent tree_find_remove_max. 
+assert ((node k0 v0 t1_1 t1_2) <> null). {intro. discriminate. }
+apply tree_find_remove_max_nonempty in H. destruct H. destruct H.
+rewrite <- Heqtree_removed in H. discriminate. 
+Qed. 
 
 
 End REMOVE.
