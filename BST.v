@@ -30,6 +30,13 @@ Inductive Tree : Type :=
   | null : Tree
   | node : K->V->Tree->Tree->Tree. 
 
+Theorem is_null_dec: forall t, {t = null} + {t <> null}.
+Proof.
+induction t; simpl; intros.
+left. reflexivity.
+right. intro. discriminate.
+Qed.
+
 (* general predicate *) 
 Fixpoint tree_all_keys (t: Tree) (p: K->V->Prop) : Prop := 
   match t with 
@@ -416,7 +423,9 @@ Fixpoint tree_remove (t: Tree) (k: K) : Tree :=
   match t with
   | null => null
   | node k' v ltr rtr => if k =? k' then tree_remove_root t
-                         else if k <? k' then tree_remove ltr k else tree_remove rtr k
+                         else if k <? k' then 
+                         (node k' v (tree_remove ltr k) rtr) else 
+                         (node k' v ltr (tree_remove rtr k))
   end.
 
 (** Theorems and lemmas which include remove *) 
@@ -526,6 +535,44 @@ induction t; intros.
     simpl. destruct t2; try discriminate. rewrite H0. exists (node k v t1 x0). reflexivity.  
 Qed.
 
+Lemma tree_find_remove_max_empty: 
+  forall t rm_t, tree_find_remove_max t = (rm_t, None) -> t = null.
+Proof.
+intros.
+destruct (is_null_dec t).
+assumption.
+apply tree_find_remove_max_nonempty in n.
+destruct n. destruct H0. rewrite H in H0. discriminate.
+Qed.
+
+Lemma remove_root_satisfies_all: forall t p
+  (SAT: tree_all_keys t p),
+  tree_all_keys (tree_remove_root t) p.
+Proof.
+Opaque tree_find_remove_max.
+destruct t; simpl; intros.
+constructor.
+remember t2 as t2'. remember t1 as t1'.
+destruct t1'.
+apply SAT.
+destruct t2'.
+apply SAT.
+rewrite Heqt1' in *. rewrite Heqt2' in *.
+remember (tree_find_remove_max t1) as removed.
+destruct removed. destruct o.
+-
+destruct p0.
+simpl.
+assert (A := Heqremoved). symmetry in A.
+apply tree_max_in in A. eapply tree_all_keys_elements in A; try apply SAT.
+split. apply A. split. eapply remove_max_satisfies_all; eauto. apply SAT.
+apply SAT.
+-
+symmetry in Heqremoved.
+apply tree_find_remove_max_empty in Heqremoved. subst.
+simpl. split. apply SAT. split. apply SAT. apply SAT.
+Qed.
+
 Lemma tree_remove_root_bst: forall t rm_t (ISBST: is_bst t) (REMOVE: tree_remove_root t = rm_t),
   is_bst rm_t.
 Proof.
@@ -554,8 +601,69 @@ Transparent tree_find_remove_max.
 assert ((node k0 v0 t1_1 t1_2) <> null). {intro. discriminate. }
 apply tree_find_remove_max_nonempty in H. destruct H. destruct H.
 rewrite <- Heqtree_removed in H. discriminate. 
-Qed. 
+Qed.
 
+Lemma remove_satisfies_all: forall t p k
+  (SAT: tree_all_keys t p),
+  tree_all_keys (tree_remove t k) p.
+Proof.
+Opaque tree_remove_root.
+induction t; simpl; intros.
+constructor.
+destruct (k0 =? k).
+apply remove_root_satisfies_all. simpl. apply SAT.
+destruct (k0 <? k); simpl.
+split. apply SAT. split. apply IHt1. apply SAT. apply SAT.
+split. apply SAT. split. apply SAT. apply IHt2. apply SAT.
+Qed.
+
+Theorem tree_remove_bst : forall t rm_t k (ISBST: is_bst t) (REMOVE: tree_remove t k = rm_t),
+  is_bst rm_t.
+Proof.
+Opaque tree_remove_root.
+induction t; simpl; intros.
+subst. simpl. constructor.
+destruct (k0 =? k).
+subst.
+eapply tree_remove_root_bst; try eauto. apply ISBST.
+destruct (k0 <? k).
+subst.
+simpl.
+split.
+apply remove_satisfies_all. apply ISBST.
+split. apply ISBST. split.
+eapply IHt1. apply ISBST. eauto. apply ISBST.
+subst. simpl.
+split. apply ISBST.
+split. apply remove_satisfies_all. apply ISBST.
+split. apply ISBST.
+eapply IHt2; eauto. apply ISBST.
+Qed.
+
+Theorem bst_remove_proof : forall t k, is_bst t -> is_bst (tree_remove t k). 
+Proof. 
+intros. remember (tree_remove t k) as rm_t. 
+eapply tree_remove_bst. apply H. symmetry in Heqrm_t. eassumption.
+Qed.  
+
+Definition remove_BST (tr: BST) (k: K) : BST := 
+  match tr with  
+  | tree t proof_t         => tree (tree_remove t k) (bst_remove_proof t k proof_t)
+  end. 
+
+(*
+Theorem remove_unseachable : forall (tr: BST) k, bst_search (remove_BST tr k) k = None.
+Proof.
+destruct tr.
+revert i.
+induction t; simpl; intros.
+reflexivity.
+remember (k0 =? k) as equals. destruct equals.
+induction tr; simpl; intros.
+intros tr. destruct tr. intro k. 
+
+Qed.
+*)
 
 End REMOVE.
 
