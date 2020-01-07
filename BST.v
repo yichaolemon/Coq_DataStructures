@@ -398,6 +398,17 @@ apply bst_equiv in H1. apply H. apply in_map_iff. exists (k, v).
 simpl. split; try auto.
 Qed. 
 
+Lemma min_no_search: forall t k, tree_min t k -> tree_search t k = None.
+Proof.
+intros.
+remember (tree_search t k) as found.
+destruct found.
+symmetry in Heqfound. apply tree_found in Heqfound.
+eapply tree_all_keys_elements in Heqfound; eauto.
+simpl in Heqfound. omega.
+easy.
+Qed.
+
 Section REMOVE.
 
 Fixpoint tree_find_remove_max (t: Tree) : (Tree * option (K * V)) :=
@@ -651,19 +662,99 @@ Definition remove_BST (tr: BST) (k: K) : BST :=
   | tree t proof_t         => tree (tree_remove t k) (bst_remove_proof t k proof_t)
   end. 
 
-(*
-Theorem remove_unseachable : forall (tr: BST) k, bst_search (remove_BST tr k) k = None.
+Lemma non_exists_tree_min : forall tr k, 
+  is_bst tr -> tree_min tr k -> tree_search tr k = None.
 Proof.
-destruct tr.
-revert i.
-induction t; simpl; intros.
-reflexivity.
-remember (k0 =? k) as equals. destruct equals.
-induction tr; simpl; intros.
-intros tr. destruct tr. intro k. 
+intros tr k IS_BST. 
+induction tr. 
+- intros. reflexivity. 
+- unfold tree_search. remember (k =? k0) as a. destruct a. 
+  + symmetry in Heqa; apply Nat.eqb_eq in Heqa; subst. intro. inversion H. 
+  omega. 
+  + symmetry in Heqa. remember (k <? k0) as b. destruct b. fold tree_search. 
+    intro. apply IHtr1. apply IS_BST. apply H. 
+    fold tree_search. intro. apply IHtr2. apply IS_BST. apply H. 
+Qed. 
 
+Lemma non_exists_tree_max : forall tr k, 
+  is_bst tr -> tree_max tr k -> tree_search tr k = None.
+Proof.
+intros tr k IS_BST. 
+induction tr. 
+- intros. reflexivity. 
+- unfold tree_search. remember (k =? k0) as a. destruct a. 
+  + symmetry in Heqa; apply Nat.eqb_eq in Heqa; subst. intro. inversion H. 
+  omega. 
+  + remember (k <? k0) as b. destruct b. fold tree_search. 
+    intro. apply IHtr1. apply IS_BST. apply H. 
+    fold tree_search. intro. apply IHtr2. apply IS_BST. apply H. 
+Qed. 
+
+Lemma remove_root_no_find_root : forall t1 t2 (k:K) v, is_bst (node k v t1 t2) 
+  -> tree_search (tree_remove_root (node k v t1 t2)) k = None. 
+Proof. 
+Transparent tree_remove_root.
+Opaque tree_find_remove_max. 
+intros. induction t1. 
+- intros.  assert (AH:= H). simpl in H. simpl. apply non_exists_tree_min. 
+apply H. apply H. 
+- intros. simpl.
+induction t2; simpl; intros.
++ (* inducting on right subtree, base case *)
+  remember (k =? k0) as a; destruct a. 
+  symmetry in Heqa. apply Nat.eqb_eq in Heqa. simpl in H. subst. 
+  assert (tree_max (node k0 v0 t1_1 t1_2) k0). apply H. inversion H0. omega.
+  remember (k <? k0) as b; destruct b. simpl in H. symmetry in Heqb; apply Nat.ltb_lt in Heqb.
+  assert (tree_max (node k0 v0 t1_1 t1_2) k). apply H. assert (k0 < k). apply H0. 
+  omega. assert (t1_2 = tree_remove_root (node k v t1_2 null)). { simpl. destruct t1_2; try reflexivity. }
+  rewrite <- H0 in IHt1_2. apply IHt1_2.  simpl. simpl in H. destruct H. 
+  split. apply H. split. constructor. split. apply H1. auto.
++ (* neither left nor right subtrees are null *) 
+  (* annoyingly, too much got unfolded *) 
+  fold (tree_remove_root (node k v (node k0 v0 t1_1 t1_2) (node k1 v1 t2_1 t2_2))).
+  fold (tree_remove_root (node k v (node k0 v0 t1_1 t1_2) t2_2)) in IHt2_2. 
+  fold (tree_remove_root (node k v (node k0 v0 t1_1 t1_2) t2_1)) in IHt2_1. 
+  simpl. remember (tree_find_remove_max (node k0 v0 t1_1 t1_2)) as rm_t. 
+  destruct rm_t.
+  remember (node k1 v1 t2_1 t2_2) as rtr.
+  remember (node k0 v0 t1_1 t1_2) as ltr.
+  clear IHt1_1 IHt1_2 IHt2_1 IHt2_2.
+  destruct o.
+* (* left subtree has a max *)
+  destruct p.
+  simpl. simpl in H.
+  assert (In (k2, v2) (tree_elements ltr)) as in_left.
+  { eapply tree_max_in. eauto. }
+  assert (k2 < k) as k2_lt.
+  { simpl in H. destruct H. eapply tree_all_keys_elements in in_left; eauto.
+  simpl in in_left. assumption. }
+  replace (k =? k2) with false.
+  replace (k <? k2) with false.
+  apply min_no_search.
+  apply H.
+  remember (k <? k2) as lt. destruct lt. symmetry in Heqlt. apply Nat.ltb_lt in Heqlt. omega. easy.
+  symmetry. apply nat_not_equal. intro. omega.
+* (* left subtree has no max *)
+  assert (ltr <> null) as H'. intro; subst; discriminate.
+  apply tree_find_remove_max_nonempty in H'.
+  destruct H'. destruct H0.
+  rewrite H0 in Heqrm_t. discriminate.
 Qed.
-*)
+
+
+Theorem remove_unseachable : forall (tr: BST) k, bst_search (remove_BST tr k) k = None.
+Proof. 
+induction tr; simpl; intros. 
+Transparent tree_remove. Opaque tree_remove_root. induction t. 
+- (* trivial case *) 
+reflexivity. 
+- (* second case *) 
+simpl . remember (k =? k0) as a. destruct a. 
++ symmetry in Heqa. apply Nat.eqb_eq in Heqa. subst. eapply  remove_root_no_find_root.
+  apply i. 
++ remember (k <? k0) as a. destruct a. simpl. rewrite <- Heqa. rewrite <- Heqa0.
+  apply IHt1. apply i. simpl. rewrite <- Heqa. rewrite <- Heqa0. apply IHt2.  apply i.
+Qed.
 
 End REMOVE.
 
